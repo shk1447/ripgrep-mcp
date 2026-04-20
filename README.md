@@ -1,4 +1,4 @@
-# MCP Ripgrep Server
+# Ripgrep MCP Server
 
 An MCP server that provides ripgrep (rg) search capabilities to any MCP client such as Claude.
 
@@ -25,13 +25,13 @@ To use this MCP server with Claude for Desktop:
      "mcpServers": {
        "ripgrep": {
          "command": "npx",
-         "args": ["-y", "mcp-ripgrep@latest"]
+         "args": ["-y", "ripgrep-mcp@latest"]
        }
      }
    }
    ```
    
-   Replace `/path/to/mcp-ripgrep` with the absolute path to where you cloned this repository.
+   Replace `/path/to/ripgrep-mcp` with the absolute path to where you cloned this repository.
 
 3. Restart Claude for Desktop.
 
@@ -83,7 +83,7 @@ List all supported file types in ripgrep.
 
 ## Security Considerations
 
-This MCP server executes shell commands using the ripgrep tool. While efforts have been made to safely escape arguments, use caution when providing input as it runs commands on your machine.
+This MCP server executes the ripgrep binary on your machine. It passes arguments directly to `rg` without shell command string construction, but you should still use caution when providing paths and patterns because searches run against your local filesystem.
 
 ## License
 
