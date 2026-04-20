@@ -1,5 +1,5 @@
 {
-  "name": "mcp-ripgrep",
+  "name": "ripgrep-mcp",
   "version": "0.4.0",
   "description": "An MCP server to wrap ripgrep",
   "main": "dist/index.js",
@@ -10,7 +10,7 @@
     "setup": "npm install && npm run build"
   },
   "bin": {
-    "mcp-ripgrep": "./dist/index.js"
+    "ripgrep-mcp": "./dist/index.js"
   },
   "type": "module",
   "dependencies": {
@@ -23,7 +23,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mcollina/mcp-ripgrep.git"
+    "url": "git+https://github.com/shk1447/ripgrep-mcp.git"
   },
   "keywords": [
     "mcp",
@@ -33,10 +33,10 @@
     "ripgrep",
     "rg"
   ],
-  "author": "Matteo Collina <hello@matteocollina.com>",
+  "author": "Khan <sukan8822@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/mcollina/mcp-ripgrep/issues"
+    "url": "https://github.com/shk1447/ripgrep-mcp/issues"
   },
-  "homepage": "https://github.com/mcollina/mcp-ripgrep#readme"
+  "homepage": "https://github.com/shk1447/ripgrep-mcp#readme"
 }
