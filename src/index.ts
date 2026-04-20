@@ -35,44 +35,44 @@ const server = new Server(
 );
 
 /**
- * Safely escape a string for shell command execution.
- * This is a basic implementation and should be replaced with a more robust solution in production.
+ * Format a command for debug logging only.
  */
-function escapeShellArg(arg: string): string {
-  // Replace all single quotes with the sequence: '"'"'
-  // This ensures the argument is properly quoted in shell commands
-  return `'${arg.replace(/'/g, "'\"'\"'")}'`;
+function formatCommand(program: string, args: string[]): string {
+  return [program, ...args]
+    .map((arg) => (/[\s"']/u.test(arg) ? JSON.stringify(arg) : arg))
+    .join(" ");
 }
 
 /**
- * Execute a command with isolated streams to prevent external processes
+ * Execute ripgrep with isolated streams to prevent external processes
  * from interfering with the output.
+ *
+ * Keep arguments as an argv array instead of building a shell command string.
+ * This avoids Windows quoting issues where single quotes are treated as literal
+ * path characters and command.split(" ") breaks paths containing spaces.
  */
-function exec(command: string): Promise<{ stdout: string; stderr: string }> {
+function execRg(args: string[]): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const parts = command.split(" ");
-    const program = parts[0];
-    const args = parts.slice(1).filter(arg => arg.length > 0);
-    
     // Use spawn with explicit stdio control
-    const child = spawn(program, args, {
-      shell: true, // Use shell to handle quotes and escaping
+    const child = spawn("rg", args, {
+      shell: false,
+      windowsHide: true,
     });
-    
+
     let stdout = "";
     let stderr = "";
-    
+
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    
+
     child.stdout.on("data", (data) => {
       stdout += data;
     });
-    
+
     child.stderr.on("data", (data) => {
       stderr += data;
     });
-    
+
     child.on("close", (code) => {
       if (code === 0 || code === 1) { // Code 1 is "no matches" for ripgrep
         resolve({ stdout, stderr });
@@ -82,7 +82,7 @@ function exec(command: string): Promise<{ stdout: string; stderr: string }> {
         reject(error);
       }
     });
-    
+
     // Handle process errors
     child.on("error", (error) => {
       reject(error);
@@ -181,15 +181,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // Handle tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   const toolName = request.params.name;
-  
+
   if (!["search", "advanced-search", "count-matches", "list-files", "list-file-types"].includes(toolName)) {
     // Return ServerResult.NEXT to allow the next handler to process the request
     return Object.create(null);
   }
-  
+
   try {
     const args = request.params.arguments || {};
-    
+
     switch (toolName) {
       case "search": {
         const pattern = String(args.pattern || "");
@@ -199,56 +199,56 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         const maxResults = typeof args.maxResults === 'number' ? args.maxResults : undefined;
         const context = typeof args.context === 'number' ? args.context : undefined;
         const useColors = typeof args.useColors === 'boolean' ? args.useColors : false;
-        
+
         if (!pattern) {
           return {
             isError: true,
             content: [{ type: "text", text: "Error: Pattern is required" }]
           };
         }
-        
-        // Build the rg command with flags
-        let command = "rg";
-        
+
+        // Build the rg args with flags
+        const rgArgs: string[] = [];
+
         // Add case sensitivity flag if specified
         if (caseSensitive === true) {
-          command += " -s"; // Case sensitive
+          rgArgs.push("-s"); // Case sensitive
         } else if (caseSensitive === false) {
-          command += " -i"; // Case insensitive
+          rgArgs.push("-i"); // Case insensitive
         }
-        
+
         // Add file pattern if specified
         if (filePattern) {
-          command += ` -g ${escapeShellArg(filePattern)}`;
+          rgArgs.push("-g", filePattern);
         }
-        
+
         // Add max results if specified
         if (maxResults !== undefined && maxResults > 0) {
-          command += ` -m ${maxResults}`;
+          rgArgs.push("-m", String(maxResults));
         }
-        
+
         // Add context lines if specified
         if (context !== undefined && context > 0) {
-          command += ` -C ${context}`;
+          rgArgs.push("-C", String(context));
         }
-        
+
         // Add line numbers
-        command += " -n";
-        
+        rgArgs.push("-n");
+
         // Add color setting
-        command += useColors ? " --color always" : " --color never";
-        
+        rgArgs.push("--color", useColors ? "always" : "never");
+
         // Add pattern and path
-        command += ` ${escapeShellArg(pattern)} ${escapeShellArg(path)}`;
-        
-        console.error(`Executing: ${command}`);
-        const { stdout, stderr } = await exec(command);
-        
+        rgArgs.push(pattern, path);
+
+        console.error(`Executing: ${formatCommand("rg", rgArgs)}`);
+        const { stdout, stderr } = await execRg(rgArgs);
+
         // If there's anything in stderr, log it for debugging
         if (stderr) {
           console.error(`ripgrep stderr: ${stderr}`);
         }
-        
+
         return {
           content: [
             {
@@ -258,7 +258,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           ]
         };
       }
-      
+
       case "advanced-search": {
         const pattern = String(args.pattern || "");
         const path = String(args.path);
@@ -275,98 +275,98 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         const showFilenamesOnly = typeof args.showFilenamesOnly === 'boolean' ? args.showFilenamesOnly : undefined;
         const showLineNumbers = typeof args.showLineNumbers === 'boolean' ? args.showLineNumbers : undefined;
         const useColors = typeof args.useColors === 'boolean' ? args.useColors : false;
-        
+
         if (!pattern) {
           return {
             isError: true,
             content: [{ type: "text", text: "Error: Pattern is required" }]
           };
         }
-        
-        // Build the rg command with flags
-        let command = "rg";
-        
+
+        // Build the rg args with flags
+        const rgArgs: string[] = [];
+
         // Add case sensitivity flag if specified
         if (caseSensitive === true) {
-          command += " -s"; // Case sensitive
+          rgArgs.push("-s"); // Case sensitive
         } else if (caseSensitive === false) {
-          command += " -i"; // Case insensitive
+          rgArgs.push("-i"); // Case insensitive
         }
-        
+
         // Add fixed strings flag if specified
         if (fixedStrings === true) {
-          command += " -F"; // Fixed strings
+          rgArgs.push("-F"); // Fixed strings
         }
-        
+
         // Add file pattern if specified
         if (filePattern) {
-          command += ` -g ${escapeShellArg(filePattern)}`;
+          rgArgs.push("-g", filePattern);
         }
-        
+
         // Add file type if specified
         if (fileType) {
-          command += ` -t ${fileType}`;
+          rgArgs.push("-t", fileType);
         }
-        
+
         // Add max results if specified
         if (maxResults !== undefined && maxResults > 0) {
-          command += ` -m ${maxResults}`;
+          rgArgs.push("-m", String(maxResults));
         }
-        
+
         // Add context lines if specified
         if (context !== undefined && context > 0) {
-          command += ` -C ${context}`;
+          rgArgs.push("-C", String(context));
         }
-        
+
         // Add invert match if specified
         if (invertMatch === true) {
-          command += " -v";
+          rgArgs.push("-v");
         }
-        
+
         // Add word match if specified
         if (wordMatch === true) {
-          command += " -w";
+          rgArgs.push("-w");
         }
-        
+
         // Add hidden files flag if specified
         if (includeHidden === true) {
-          command += " -."
+          rgArgs.push("-.");
         }
-        
+
         // Add follow symlinks flag if specified
         if (followSymlinks === true) {
-          command += " -L";
+          rgArgs.push("-L");
         }
-        
+
         // Add filenames only flag if specified
         if (showFilenamesOnly === true) {
-          command += " -l";
+          rgArgs.push("-l");
         }
-        
+
         // Add line numbers flag if specified
         if (showLineNumbers === true) {
-          command += " -n";
+          rgArgs.push("-n");
         } else if (showLineNumbers === false) {
-          command += " -N";
+          rgArgs.push("-N");
         } else {
           // Default to showing line numbers
-          command += " -n";
+          rgArgs.push("-n");
         }
-        
+
         // Add color setting
-        command += useColors ? " --color always" : " --color never";
-        
+        rgArgs.push("--color", useColors ? "always" : "never");
+
         // Add pattern and path
-        command += ` ${escapeShellArg(pattern)} ${escapeShellArg(path)}`;
-        
-        console.error(`Executing: ${command}`);
-        const { stdout, stderr } = await exec(command);
-        
+        rgArgs.push(pattern, path);
+
+        console.error(`Executing: ${formatCommand("rg", rgArgs)}`);
+        const { stdout, stderr } = await execRg(rgArgs);
+
         // If there's anything in stderr, log it for debugging
         if (stderr) {
           console.error(`ripgrep stderr: ${stderr}`);
         }
-        
+
         return {
           content: [
             {
@@ -376,7 +376,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           ]
         };
       }
-      
+
       case "count-matches": {
         const pattern = String(args.pattern || "");
         const path = String(args.path);
@@ -384,50 +384,50 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         const filePattern = args.filePattern ? String(args.filePattern) : undefined;
         const countLines = typeof args.countLines === 'boolean' ? args.countLines : true;
         const useColors = typeof args.useColors === 'boolean' ? args.useColors : false;
-        
+
         if (!pattern) {
           return {
             isError: true,
             content: [{ type: "text", text: "Error: Pattern is required" }]
           };
         }
-        
-        // Build the rg command with flags
-        let command = "rg";
-        
+
+        // Build the rg args with flags
+        const rgArgs: string[] = [];
+
         // Add case sensitivity flag if specified
         if (caseSensitive === true) {
-          command += " -s"; // Case sensitive
+          rgArgs.push("-s"); // Case sensitive
         } else if (caseSensitive === false) {
-          command += " -i"; // Case insensitive
+          rgArgs.push("-i"); // Case insensitive
         }
-        
+
         // Add file pattern if specified
         if (filePattern) {
-          command += ` -g ${escapeShellArg(filePattern)}`;
+          rgArgs.push("-g", filePattern);
         }
-        
+
         // Add count flag
         if (countLines) {
-          command += " -c"; // Count lines
+          rgArgs.push("-c"); // Count lines
         } else {
-          command += " --count-matches"; // Count total matches
+          rgArgs.push("--count-matches"); // Count total matches
         }
-        
+
         // Add color setting
-        command += useColors ? " --color always" : " --color never";
-        
+        rgArgs.push("--color", useColors ? "always" : "never");
+
         // Add pattern and path
-        command += ` ${escapeShellArg(pattern)} ${escapeShellArg(path)}`;
-        
-        console.error(`Executing: ${command}`);
-        const { stdout, stderr } = await exec(command);
-        
+        rgArgs.push(pattern, path);
+
+        console.error(`Executing: ${formatCommand("rg", rgArgs)}`);
+        const { stdout, stderr } = await execRg(rgArgs);
+
         // If there's anything in stderr, log it for debugging
         if (stderr) {
           console.error(`ripgrep stderr: ${stderr}`);
         }
-        
+
         return {
           content: [
             {
@@ -437,45 +437,45 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           ]
         };
       }
-      
+
       case "list-files": {
         const path = String(args.path);
         const filePattern = args.filePattern ? String(args.filePattern) : undefined;
         const fileType = args.fileType ? String(args.fileType) : undefined;
         const includeHidden = typeof args.includeHidden === 'boolean' ? args.includeHidden : undefined;
-        
-        // Build the rg command with flags
-        let command = "rg --files";
-        
+
+        // Build the rg args with flags
+        const rgArgs: string[] = ["--files"];
+
         // Add file pattern if specified
         if (filePattern) {
-          command += ` -g ${escapeShellArg(filePattern)}`;
+          rgArgs.push("-g", filePattern);
         }
-        
+
         // Add file type if specified
         if (fileType) {
-          command += ` -t ${fileType}`;
+          rgArgs.push("-t", fileType);
         }
-        
+
         // Add hidden files flag if specified
         if (includeHidden === true) {
-          command += " -."
+          rgArgs.push("-.");
         }
-        
+
         // No colors for file listing
-        command += " --color never";
-        
+        rgArgs.push("--color", "never");
+
         // Add path
-        command += ` ${escapeShellArg(path)}`;
-        
-        console.error(`Executing: ${command}`);
-        const { stdout, stderr } = await exec(command);
-        
+        rgArgs.push(path);
+
+        console.error(`Executing: ${formatCommand("rg", rgArgs)}`);
+        const { stdout, stderr } = await execRg(rgArgs);
+
         // If there's anything in stderr, log it for debugging
         if (stderr) {
           console.error(`ripgrep stderr: ${stderr}`);
         }
-        
+
         return {
           content: [
             {
@@ -485,19 +485,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           ]
         };
       }
-      
+
       case "list-file-types": {
         // No colors for type listing
-        const command = "rg --type-list --color never";
-        
-        console.error(`Executing: ${command}`);
-        const { stdout, stderr } = await exec(command);
-        
+        const rgArgs = ["--type-list", "--color", "never"];
+
+        console.error(`Executing: ${formatCommand("rg", rgArgs)}`);
+        const { stdout, stderr } = await execRg(rgArgs);
+
         // If there's anything in stderr, log it for debugging
         if (stderr) {
           console.error(`ripgrep stderr: ${stderr}`);
         }
-        
+
         return {
           content: [
             {
@@ -507,7 +507,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           ]
         };
       }
-      
+
       default:
         // This shouldn't happen due to the initial check, but TypeScript doesn't know that
         return {
@@ -527,7 +527,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         ]
       };
     }
-    
+
     // Otherwise, it's a real error
     return {
       isError: true,
